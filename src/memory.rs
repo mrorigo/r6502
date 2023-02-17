@@ -11,10 +11,6 @@ impl Memory<'_> {
         let size = cells.len();
         Memory { cells, size }
     }
-
-    // pub fn as_memory_operations(&self) -> &dyn MemoryOperations {
-    //     self as &dyn MemoryOperations
-    // }
 }
 
 pub trait MemoryOperations {
@@ -48,7 +44,6 @@ impl MemoryOperations for Memory<'_> {
         }
     }
 
-    // @FIXME: Handle Traps
     fn write16(&mut self, addr: usize, value: u16) -> Result<(), Trap> {
         self.write8(addr, (value & 0xff) as u8)?;
         self.write8(addr + 1, (value >> 8) as u8)?;
