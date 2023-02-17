@@ -56,14 +56,14 @@ macro_rules! set_or_clear_nz {
 
 #[allow(non_snake_case, dead_code)]
 impl OpCode {
-    fn push_stack(cpu: &mut CPU, val: u8) -> Result<(), Trap> {
+    pub fn push_stack(cpu: &mut CPU, val: u8) -> Result<(), Trap> {
         let sp = cpu.reg(Register::SP);
         cpu.write8(STACK_BASE.wrapping_add(sp as u16) as usize, val)?;
         cpu.set_reg(Register::SP, sp.wrapping_sub(1));
         Ok(())
     }
 
-    fn pop_stack(cpu: &mut CPU) -> Result<u8, Trap> {
+    pub fn pop_stack(cpu: &mut CPU) -> Result<u8, Trap> {
         let sp = cpu.reg(Register::SP);
         cpu.set_reg(Register::SP, sp.wrapping_add(1));
         cpu.read8(STACK_BASE.wrapping_add(sp as u16).wrapping_add(1) as usize)
@@ -127,8 +127,11 @@ impl OpCode {
         Ok(())
     }
 
-    pub fn BIT(_cpu: &mut CPU) -> Result<(), Trap> {
-        todo!();
+    pub fn BIT(cpu: &mut CPU) -> Result<(), Trap> {
+        let op2 = cpu.operands.op2;
+        set_or_clear_status_bit!(cpu, (op2 & cpu.reg(Register::A)) == 0, Z);
+        set_or_clear_status_bit!(cpu, (op2 & StatusFlags::mask(StatusFlags::V)) == 0, V);
+        set_or_clear_status_bit!(cpu, (op2 & StatusFlags::mask(StatusFlags::N)) == 0, N);
         Ok(())
     }
 
@@ -363,8 +366,11 @@ impl OpCode {
     }
 
     pub fn RLA(cpu: &mut CPU) -> Result<(), Trap> {
-        todo!();
-        // Ok(())
+        let ar = OpCode::impl_ROL(cpu, cpu.operands.op2);
+        cpu.write8(cpu.operands.op2 as usize, ar)?;
+        let a = cpu.reg(Register::A);
+        set_or_clear_nz!(cpu, a);
+        Ok(())
     }
     pub fn ROL(cpu: &mut CPU) -> Result<(), Trap> {
         match cpu.opcode.addressing_mode {
@@ -416,8 +422,10 @@ impl OpCode {
         // Ok(())
     }
     pub fn RTI(cpu: &mut CPU) -> Result<(), Trap> {
-        todo!();
-        // Ok(())
+        cpu.sr = OpCode::pop_stack(cpu)? | 0x20;
+        cpu.pc = OpCode::pop_stack(cpu)? as u16 | ((OpCode::pop_stack(cpu)? as u16) << 8) - 1;
+
+        Ok(())
     }
     pub fn RTS(cpu: &mut CPU) -> Result<(), Trap> {
         cpu.pc = (OpCode::pop_stack(cpu)? as u16) | ((OpCode::pop_stack(cpu)? as u16) << 8);
