@@ -22,12 +22,6 @@ macro_rules! branch {
         pub fn $name(cpu: &mut CPU) -> Result<(), Trap> {
             if StatusFlags::is_set(cpu.sr, $bit) == $flag {
                 let target = cpu.operands.op1 + cpu.opcode.size as u16 - 2;
-                // println!(
-                //     "{}: taking branch from {:#x?} to {:#x?}",
-                //     stringify!($name),
-                //     cpu.pc,
-                //     target
-                // );
                 if target == cpu.pc.wrapping_sub(2) {
                     return Err(Trap::Break(cpu.pc as usize));
                 }
@@ -203,7 +197,7 @@ impl OpCode {
     pub fn ISB(cpu: &mut CPU) -> Result<(), Trap> {
         let v = cpu.operands.op2.wrapping_add(1);
         cpu.write8(cpu.operands.op1 as usize, v)?;
-        OpCode::SBC(cpu);
+        OpCode::SBC(cpu)?;
         Ok(())
     }
     pub fn DCP(cpu: &mut CPU) -> Result<(), Trap> {
@@ -287,8 +281,8 @@ impl OpCode {
     }
     pub fn JSR(cpu: &mut CPU) -> Result<(), Trap> {
         let pc2 = cpu.pc.wrapping_add(2);
-        OpCode::push_stack(cpu, (pc2 >> 8) as u8);
-        OpCode::push_stack(cpu, (pc2 & 0xff) as u8);
+        OpCode::push_stack(cpu, (pc2 >> 8) as u8)?;
+        OpCode::push_stack(cpu, (pc2 & 0xff) as u8)?;
         cpu.pc = cpu.operands.op1.wrapping_add(cpu.opcode.size as u16);
         Ok(())
     }
@@ -342,7 +336,7 @@ impl OpCode {
         Ok(())
     }
 
-    pub fn NOP(cpu: &mut CPU) -> Result<(), Trap> {
+    pub fn NOP(_cpu: &mut CPU) -> Result<(), Trap> {
         Ok(())
     }
 
@@ -361,7 +355,7 @@ impl OpCode {
         Ok(())
     }
     pub fn PLP(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.sr = (OpCode::pop_stack(cpu).unwrap() & !0x10) | 0x20;
+        cpu.sr = (OpCode::pop_stack(cpu)? & !0x10) | 0x20;
         Ok(())
     }
 
@@ -417,7 +411,7 @@ impl OpCode {
         x
     }
 
-    pub fn RRA(cpu: &mut CPU) -> Result<(), Trap> {
+    pub fn RRA(_cpu: &mut CPU) -> Result<(), Trap> {
         todo!();
         // Ok(())
     }
@@ -452,7 +446,7 @@ impl OpCode {
         Ok(())
     }
 
-    pub fn SKW(cpu: &mut CPU) -> Result<(), Trap> {
+    pub fn SKW(_cpu: &mut CPU) -> Result<(), Trap> {
         Ok(())
     }
 

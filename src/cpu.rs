@@ -1,11 +1,8 @@
-use std::fmt::Display;
-
 use crate::{
     memory::MemoryOperations,
     opcodes::{OpCode, OPCODE_MAP},
 };
 
-//const STACK_SIZE: u16 = 0x100;
 pub const STACK_BASE: u16 = 0x100;
 
 type SR = u8;
@@ -16,7 +13,7 @@ pub enum StatusFlags {
     Z = 1,
     I = 2,
     D = 3,
-    B = 4,
+    _B = 4,
     _U = 5,
     V = 6,
     N = 7,
@@ -130,7 +127,7 @@ impl CPU<'_> {
     }
 
     // Returns the # of ticks until next clock
-    pub fn tick(&mut self) -> Result<usize, Trap> {
+    pub fn tick(&mut self) -> Result<(), Trap> {
         self.ticks = self.ticks.wrapping_add(1);
         if self.ticks > self.clock {
             let data = self.memory.read8(self.pc as usize)?;
@@ -153,7 +150,7 @@ impl CPU<'_> {
 
             self.pc = self.pc.wrapping_add(self.opcode.size as u16);
         }
-        Ok(self.clock - self.ticks)
+        Ok(())
     }
 }
 

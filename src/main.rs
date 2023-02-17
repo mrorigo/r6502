@@ -1,7 +1,6 @@
 use crate::{
-    cpu::{StatusFlags, CPU},
+    cpu::CPU,
     memory::{Memory, MemoryOperations},
-    opcodes::OPCODE_MAP,
 };
 
 mod cpu;
@@ -28,14 +27,23 @@ fn main() {
     cpu.pc = 0x400;
     cpu.set_reg(cpu::Register::SP, 0xfd);
 
+    let mut timer: u32 = 0;
+
     loop {
-        match cpu.tick() {
+        timer = timer.wrapping_add(1);
+        let rs = match (timer % 1000) == 0 {
+            true => cpu.irq(),
+            false => cpu.tick(),
+        };
+
+        match rs {
             Ok(_ticks) => {}
             Err(err) => {
                 println!("Trap:{:#x?}", err);
                 break;
             }
         }
+
         println!(
             "A: {:#04x} X: {:#04x} Y: {:#04x} SP: {:#04x} PC: {:#04x} SR: {:#04x}",
             cpu.reg(cpu::Register::A),
