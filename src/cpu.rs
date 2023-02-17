@@ -116,6 +116,19 @@ impl CPU<'_> {
         self.registers[reg as usize] = value
     }
 
+    pub fn irq(&mut self) -> Result<(), Trap> {
+        // The interrupt sequence pushes three bytes onto the stack. First is the high byte of the return address,
+        // followed by the low byte, and finally the status byte from the P processor status register
+        OpCode::push_stack(self, (self.pc >> 8) as u8)?;
+        OpCode::push_stack(self, (self.pc & 0xff) as u8)?;
+        OpCode::push_stack(self, self.sr)?;
+
+        self.pc = (self.read8(0xffff)? as u16) | ((self.read8(0xfffe)? as u16) << 8);
+
+        self.clock = self.clock.wrapping_add(7);
+        Ok(())
+    }
+
     // Returns the # of ticks until next clock
     pub fn tick(&mut self) -> Result<usize, Trap> {
         self.ticks = self.ticks.wrapping_add(1);
