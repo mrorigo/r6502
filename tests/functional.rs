@@ -1,16 +1,13 @@
-use crate::{
-    cpu::CPU,
+use r6502::{
+    cpu::{Register, CPU},
     memory::{Memory, MemoryOperations},
 };
-
-mod cpu;
-mod memory;
-mod opcodes;
 
 const RAM_SIZE: usize = 1024 * 64;
 const FUNCTIONAL_TEST: &[u8; RAM_SIZE] = include_bytes!("../tests/6502_functional_test.bin");
 
-fn main() {
+#[test]
+pub fn functional() {
     let mem: &mut [u8] = &mut vec![0; RAM_SIZE];
     let mut memory = Memory::new(mem);
     let mut cpu = CPU::new(&mut memory);
@@ -25,7 +22,7 @@ fn main() {
 
     // Functional test PC starts at 0x400
     cpu.pc = 0x400;
-    cpu.set_reg(cpu::Register::SP, 0xfd);
+    cpu.set_reg(Register::SP, 0xfd);
 
     let mut timer: u32 = 0;
 
@@ -46,10 +43,10 @@ fn main() {
 
         println!(
             "A: {:#04x} X: {:#04x} Y: {:#04x} SP: {:#04x} PC: {:#04x} SR: {:#04x}",
-            cpu.reg(cpu::Register::A),
-            cpu.reg(cpu::Register::X),
-            cpu.reg(cpu::Register::Y),
-            cpu.reg(cpu::Register::SP),
+            cpu.reg(Register::A),
+            cpu.reg(Register::X),
+            cpu.reg(Register::Y),
+            cpu.reg(Register::SP),
             cpu.pc,
             cpu.sr
         );
