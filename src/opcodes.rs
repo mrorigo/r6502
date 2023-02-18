@@ -49,7 +49,8 @@ macro_rules! set_or_clear_nz {
 impl OpCode {
     pub fn push_stack(cpu: &mut CPU, val: u8) -> Result<(), Trap> {
         let sp = cpu.reg(Register::SP);
-        cpu.write8(STACK_BASE.wrapping_add(sp as u16) as usize, val)?;
+        cpu.bus
+            .write(STACK_BASE.wrapping_add(sp as u16) as usize, val)?;
         cpu.set_reg(Register::SP, sp.wrapping_sub(1));
         Ok(())
     }
@@ -57,7 +58,8 @@ impl OpCode {
     pub fn pop_stack(cpu: &mut CPU) -> Result<u8, Trap> {
         let sp = cpu.reg(Register::SP);
         cpu.set_reg(Register::SP, sp.wrapping_add(1));
-        cpu.read8(STACK_BASE.wrapping_add(sp as u16).wrapping_add(1) as usize)
+        cpu.bus
+            .read(STACK_BASE.wrapping_add(sp as u16).wrapping_add(1) as usize)
     }
 
     pub fn ADC(cpu: &mut CPU) -> Result<(), Trap> {
@@ -103,7 +105,7 @@ impl OpCode {
             }
             _ => {
                 let nval = OpCode::impl_ASL(cpu, cpu.operands.op2);
-                cpu.write8(cpu.operands.op1 as usize, nval)?;
+                cpu.bus.write(cpu.operands.op1 as usize, nval)?;
             }
         }
         Ok(())
@@ -111,7 +113,7 @@ impl OpCode {
 
     pub fn ASO(cpu: &mut CPU) -> Result<(), Trap> {
         let nval = OpCode::impl_ASL(cpu, cpu.operands.op2);
-        cpu.write8(cpu.operands.op1 as usize, nval)?;
+        cpu.bus.write(cpu.operands.op1 as usize, nval)?;
         let nval2 = cpu.reg(Register::A) | nval;
         cpu.set_reg(Register::A, nval2);
         set_or_clear_nz!(cpu, nval2);
@@ -193,13 +195,13 @@ impl OpCode {
 
     pub fn ISB(cpu: &mut CPU) -> Result<(), Trap> {
         let v = cpu.operands.op2.wrapping_add(1);
-        cpu.write8(cpu.operands.op1 as usize, v)?;
+        cpu.bus.write(cpu.operands.op1 as usize, v)?;
         OpCode::SBC(cpu)?;
         Ok(())
     }
     pub fn DCP(cpu: &mut CPU) -> Result<(), Trap> {
         let v = cpu.operands.op2.wrapping_sub(1);
-        cpu.write8(cpu.operands.op1 as usize, v)?;
+        cpu.bus.write(cpu.operands.op1 as usize, v)?;
 
         OpCode::impl_CMP(cpu, Register::A);
         Ok(())
@@ -214,7 +216,7 @@ impl OpCode {
             }
             _ => {
                 let v = cpu.operands.op2.wrapping_add(1);
-                cpu.write8(cpu.operands.op1 as usize, v)?;
+                cpu.bus.write(cpu.operands.op1 as usize, v)?;
                 v
             }
         };
@@ -243,7 +245,7 @@ impl OpCode {
             }
             _ => {
                 let v = cpu.operands.op2.wrapping_sub(1);
-                cpu.write8(cpu.operands.op1 as usize, v)?;
+                cpu.bus.write(cpu.operands.op1 as usize, v)?;
                 v
             }
         };
@@ -315,7 +317,7 @@ impl OpCode {
             }
             _ => {
                 let v: u8 = cpu.operands.op2;
-                cpu.write8(cpu.operands.op1 as usize, v.shr(1))?;
+                cpu.bus.write(cpu.operands.op1 as usize, v.shr(1))?;
                 v
             }
         };
@@ -325,7 +327,7 @@ impl OpCode {
 
     pub fn SRE(cpu: &mut CPU) -> Result<(), Trap> {
         let v: u8 = cpu.operands.op2.shr(1);
-        cpu.write8(cpu.operands.op1 as usize, v)?;
+        cpu.bus.write(cpu.operands.op1 as usize, v)?;
         let a = cpu.reg(Register::A);
         let nav = a ^ v;
         cpu.set_reg(Register::A, nav);
@@ -358,7 +360,7 @@ impl OpCode {
 
     pub fn RLA(cpu: &mut CPU) -> Result<(), Trap> {
         let ar = OpCode::impl_ROL(cpu, cpu.operands.op2);
-        cpu.write8(cpu.operands.op2 as usize, ar)?;
+        cpu.bus.write(cpu.operands.op2 as usize, ar)?;
         let a = cpu.reg(Register::A);
         set_or_clear_nz!(cpu, a);
         Ok(())
@@ -371,7 +373,7 @@ impl OpCode {
             }
             _ => {
                 let ar = OpCode::impl_ROL(cpu, cpu.operands.op2);
-                cpu.write8(cpu.operands.op1 as usize, ar)?;
+                cpu.bus.write(cpu.operands.op1 as usize, ar)?;
             }
         }
         Ok(())
@@ -384,7 +386,7 @@ impl OpCode {
             }
             _ => {
                 let ar = OpCode::impl_ROR(cpu, cpu.operands.op2);
-                cpu.write8(cpu.operands.op1 as usize, ar)?;
+                cpu.bus.write(cpu.operands.op1 as usize, ar)?;
             }
         }
         Ok(())
@@ -426,7 +428,7 @@ impl OpCode {
         let a = cpu.reg(Register::A);
         let x = cpu.reg(Register::X);
         let v = a & x;
-        cpu.write8(cpu.operands.op1 as usize, v)?;
+        cpu.bus.write(cpu.operands.op1 as usize, v)?;
         Ok(())
     }
 
@@ -448,14 +450,17 @@ impl OpCode {
     }
 
     pub fn STA(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.write8(cpu.operands.op1 as usize, cpu.reg(Register::A))
+        cpu.bus
+            .write(cpu.operands.op1 as usize, cpu.reg(Register::A))
     }
     pub fn STX(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.write8(cpu.operands.op1 as usize, cpu.reg(Register::X))?;
+        cpu.bus
+            .write(cpu.operands.op1 as usize, cpu.reg(Register::X))?;
         Ok(())
     }
     pub fn STY(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.write8(cpu.operands.op1 as usize, cpu.reg(Register::Y))?;
+        cpu.bus
+            .write(cpu.operands.op1 as usize, cpu.reg(Register::Y))?;
         Ok(())
     }
 
