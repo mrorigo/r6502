@@ -1,9 +1,6 @@
 use std::ops::Shr;
 
-use crate::{
-    cpu::{AddressingMode, Register, StatusFlags, Trap, CPU, STACK_BASE},
-    memory::MemoryOperations,
-};
+use crate::cpu::{AddressingMode, Register, StatusFlags, Trap, CPU, STACK_BASE};
 
 pub struct OpCode {
     pub name: &'static str,
@@ -283,7 +280,7 @@ impl OpCode {
         let pc2 = cpu.pc.wrapping_add(2);
         OpCode::push_stack(cpu, (pc2 >> 8) as u8)?;
         OpCode::push_stack(cpu, (pc2 & 0xff) as u8)?;
-        cpu.pc = cpu.operands.op1.wrapping_add(cpu.opcode.size as u16);
+        cpu.pc = cpu.operands.op1.wrapping_sub(cpu.opcode.size as u16);
         Ok(())
     }
 

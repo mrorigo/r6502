@@ -53,7 +53,7 @@ pub enum Trap {
 }
 
 pub struct CPU<'a> {
-    memory: &'a mut dyn MemoryOperations,
+    pub bus: &'a mut dyn BusOperations,
     registers: [u8; Register::MAX as usize],
     pub pc: u16,
     pub sr: SR,
@@ -64,31 +64,57 @@ pub struct CPU<'a> {
     pub operands: Operands,
 }
 
-impl MemoryOperations for CPU<'_> {
-    fn read8(&self, addr: usize) -> Result<u8, Trap> {
-        let value = self.memory.read8(addr);
-        //println!("CPU: read8 @ {:#06x?}: {:#4x?}", addr, value);
-        value
+/// A minimal bus consisting of only RAM
+struct Bus {
+    pub memory: dyn MemoryOperations,
+}
+
+/// In the view of the CPU, the Bus is basically a memory mapper for all the different peripherals connected to the CPU
+pub trait BusOperations {
+    fn read(&mut self, addr: usize) -> Result<u8, Trap>;
+    fn write(&mut self, addr: usize, value: u8) -> Result<(), Trap>;
+    // `tick()` returns true if an IRQ is raised
+    fn tick(&mut self) -> bool {
+        false
+    }
+}
+
+impl BusOperations for Bus {
+    fn read(&mut self, addr: usize) -> Result<u8, Trap> {
+        self.memory.read8(addr)
     }
 
-    fn write8(&mut self, addr: usize, value: u8) -> Result<(), Trap> {
-        //println!("CPU: write8 {:#4x?} @ {:#06x?}", value, addr);
+    fn write(&mut self, addr: usize, value: u8) -> Result<(), Trap> {
         self.memory.write8(addr, value)
-    }
-
-    fn read16(&self, addr: usize) -> Result<u16, Trap> {
-        self.memory.read16(addr)
-    }
-
-    fn write16(&mut self, addr: usize, value: u16) -> Result<(), Trap> {
-        self.memory.write16(addr, value)
     }
 }
 
 impl CPU<'_> {
-    pub fn new<'a, 'b>(memory: &'a mut dyn MemoryOperations) -> CPU<'a> {
+    pub fn read8(&mut self, addr: usize) -> Result<u8, Trap> {
+        self.bus.read(addr)
+    }
+
+    pub fn write8(&mut self, addr: usize, value: u8) -> Result<(), Trap> {
+        self.bus.write(addr, value)
+    }
+
+    pub fn read16(&mut self, addr: usize) -> Result<u16, Trap> {
+        let hh = self.read8(addr + 1)?;
+        let ll = self.read8(addr)?;
+        Ok(((hh as u16) << 8) | (ll as u16))
+    }
+
+    pub fn write16(&mut self, addr: usize, value: u16) -> Result<(), Trap> {
+        self.write8(addr, (value & 0xff) as u8)?;
+        self.write8(addr + 1, (value >> 8) as u8)?;
+        Ok(())
+    }
+}
+
+impl CPU<'_> {
+    pub fn new<'a>(bus: &'a mut dyn BusOperations) -> CPU<'a> {
         CPU {
-            memory,
+            bus,
             registers: [0; Register::MAX as usize],
             sr: 0,
             pc: 0,
@@ -113,7 +139,7 @@ impl CPU<'_> {
         self.registers[reg as usize] = value
     }
 
-    pub fn irq(&mut self) -> Result<(), Trap> {
+    fn irq(&mut self) -> Result<(), Trap> {
         // The interrupt sequence pushes three bytes onto the stack. First is the high byte of the return address,
         // followed by the low byte, and finally the status byte from the P processor status register
         OpCode::push_stack(self, (self.pc >> 8) as u8)?;
@@ -130,7 +156,11 @@ impl CPU<'_> {
     pub fn tick(&mut self) -> Result<(), Trap> {
         self.ticks = self.ticks.wrapping_add(1);
         if self.ticks > self.clock {
-            let data = self.memory.read8(self.pc as usize)?;
+            if self.bus.tick() {
+                return self.irq();
+            }
+
+            let data = self.bus.read(self.pc as usize)?;
             self.opcode = &OPCODE_MAP[data as usize];
 
             //println!("{:#x?}: {:#x?}", self.pc, self.opcode.name);
@@ -194,7 +224,7 @@ impl AddressingMode {
         val > 0xff
     }
 
-    fn decode(&self, cpu: &CPU) -> Result<Operands, Trap> {
+    fn decode(&self, cpu: &mut CPU) -> Result<Operands, Trap> {
         let pc1 = cpu.pc.wrapping_add(1) as usize;
         let (addr, arg, extra_cycle) = match *self {
             AddressingMode::Accumulator | AddressingMode::Implied => (0, 0, false),
@@ -247,18 +277,18 @@ impl AddressingMode {
                 ((cpu.pc as i16).wrapping_add(offs) as u16, 0, false)
             }
             AddressingMode::ZeroPage => {
-                let addr = cpu.memory.read8(pc1)? as u16;
-                (addr, cpu.memory.read8(addr as usize)? as u8, false)
+                let addr = cpu.bus.read(pc1)? as u16;
+                (addr, cpu.bus.read(addr as usize)? as u8, false)
             }
             AddressingMode::ZeroPageX => {
-                let mut addr = cpu.memory.read8(pc1)?;
+                let mut addr = cpu.bus.read(pc1)?;
                 addr = addr.wrapping_add(cpu.reg(Register::X));
-                (addr as u16, cpu.memory.read8(addr as usize)? as u8, false)
+                (addr as u16, cpu.bus.read(addr as usize)? as u8, false)
             }
             AddressingMode::ZeroPageY => {
-                let mut addr = cpu.memory.read8(pc1)?;
+                let mut addr = cpu.bus.read(pc1)?;
                 addr = addr.wrapping_add(cpu.reg(Register::Y));
-                (addr as u16, cpu.memory.read8(addr as usize)? as u8, false)
+                (addr as u16, cpu.bus.read(addr as usize)? as u8, false)
             }
         };
         Ok(Operands {
