@@ -1,5 +1,5 @@
 use crate::{
-    memory::MemoryOperations,
+    memory::{Memory, MemoryOperations},
     opcodes::{OpCode, OPCODE_MAP},
 };
 
@@ -65,8 +65,14 @@ pub struct CPU<'a> {
 }
 
 /// A minimal bus consisting of only RAM
-struct Bus {
-    pub memory: dyn MemoryOperations,
+pub struct Bus<'a> {
+    pub ram: &'a mut dyn MemoryOperations,
+}
+
+impl Bus<'_> {
+    pub fn create<'a>(ram: &'a mut Memory<'a>) -> Bus<'a> {
+        Bus { ram }
+    }
 }
 
 /// In the view of the CPU, the Bus is basically a memory mapper for all the different peripherals connected to the CPU
@@ -79,13 +85,13 @@ pub trait BusOperations {
     }
 }
 
-impl BusOperations for Bus {
+impl BusOperations for Bus<'_> {
     fn read(&mut self, addr: usize) -> Result<u8, Trap> {
-        self.memory.read8(addr)
+        self.ram.read8(addr)
     }
 
     fn write(&mut self, addr: usize, value: u8) -> Result<(), Trap> {
-        self.memory.write8(addr, value)
+        self.ram.write8(addr, value)
     }
 }
 

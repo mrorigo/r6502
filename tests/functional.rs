@@ -1,5 +1,5 @@
 use r6502::{
-    cpu::{Register, CPU},
+    cpu::{Bus, BusOperations, Register, CPU},
     memory::{Memory, MemoryOperations},
 };
 
@@ -8,9 +8,10 @@ const FUNCTIONAL_TEST: &[u8; RAM_SIZE] = include_bytes!("../tests/6502_functiona
 
 #[test]
 pub fn functional() {
-    let mem: &mut [u8] = &mut vec![0; RAM_SIZE];
-    let mut memory = Memory::new(mem);
-    let mut cpu = CPU::new(&mut memory);
+    let cells: &mut [u8] = &mut vec![0; RAM_SIZE];
+    let mut ram = Memory::new(cells);
+    let mut bus = Bus::create(&mut ram);
+    let mut cpu = CPU::new(&mut bus);
 
     for i in 0..FUNCTIONAL_TEST.len() {
         //println!("{:#x?}: {:#x?}", i, FUNCTIONAL_TEST[i]);
@@ -24,16 +25,8 @@ pub fn functional() {
     cpu.pc = 0x400;
     cpu.set_reg(Register::SP, 0xfd);
 
-    let mut timer: u32 = 0;
-
     loop {
-        timer = timer.wrapping_add(1);
-        let rs = match (timer % 1000) == 0 {
-            true => cpu.irq(),
-            false => cpu.tick(),
-        };
-
-        match rs {
+        match cpu.tick() {
             Ok(_ticks) => {}
             Err(err) => {
                 println!("Trap:{:#x?}", err);
@@ -51,4 +44,5 @@ pub fn functional() {
             cpu.sr
         );
     }
+    assert!(false)
 }
