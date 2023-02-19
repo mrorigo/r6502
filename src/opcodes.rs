@@ -78,15 +78,21 @@ impl OpCode {
     }
 
     pub fn AND(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.set_reg(Register::A, cpu.reg(Register::A) & cpu.operands.op2);
+        let value = cpu.reg(Register::A) & cpu.operands.op2;
+        cpu.set_reg(Register::A, value);
+        set_or_clear_nz!(cpu, value as u8);
         Ok(())
     }
     pub fn EOR(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.set_reg(Register::A, cpu.reg(Register::A) ^ cpu.operands.op2);
+        let value = cpu.reg(Register::A) ^ cpu.operands.op2;
+        cpu.set_reg(Register::A, value);
+        set_or_clear_nz!(cpu, value as u8);
         Ok(())
     }
     pub fn ORA(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.set_reg(Register::A, cpu.reg(Register::A) | cpu.operands.op2);
+        let value = cpu.reg(Register::A) | cpu.operands.op2;
+        cpu.set_reg(Register::A, value);
+        set_or_clear_nz!(cpu, value as u8);
         Ok(())
     }
 
