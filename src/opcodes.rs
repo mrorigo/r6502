@@ -2,6 +2,7 @@ use std::ops::Shr;
 
 use crate::cpu::{AddressingMode, Register, StatusFlags, Trap, CPU, STACK_BASE};
 
+#[derive(Clone, Copy)]
 pub struct OpCode {
     pub name: &'static str,
     pub op_impl: fn(&mut CPU) -> Result<(), Trap>,
@@ -144,7 +145,12 @@ impl OpCode {
     branch! {BVC, StatusFlags::V, false}
 
     fn BRK(cpu: &mut CPU) -> Result<(), Trap> {
-        Err(Trap::Break(cpu.pc as usize))
+        cpu.prev_pc = cpu.pc;
+        let lo = cpu.bus.read(0xfffe).unwrap();
+        let hi = cpu.bus.read(0xffff).unwrap();
+        cpu.pc = ((hi as u16) << 8) | (lo as u16);
+        //Err(Trap::Break(cpu.pc as usize))
+        Ok(())
     }
 
     pub fn CLC(cpu: &mut CPU) -> Result<(), Trap> {
@@ -467,6 +473,19 @@ impl OpCode {
     pub fn STY(cpu: &mut CPU) -> Result<(), Trap> {
         cpu.bus
             .write(cpu.operands.op1 as usize, cpu.reg(Register::Y))?;
+        Ok(())
+    }
+
+    pub fn TAS(cpu: &mut CPU) -> Result<(), Trap> {
+        // ANDs the contents of the A and X registers (without changing the
+        // contents of either register) and transfers the result to the stack pointer.
+        let a = cpu.reg(Register::A);
+        let x = cpu.reg(Register::X);
+        let v = a & x;
+        cpu.set_reg(Register::SP, v);
+        // ..then ANDs that result with the contents of the high byte of  the target address
+        let v = v & cpu.operands.op2;
+        cpu.bus.write(cpu.operands.op1 as usize, v)?;
         Ok(())
     }
 
@@ -1289,7 +1308,7 @@ pub const OPCODE_MAP: [OpCode; 256] = [
         2,
         false
     ),
-    op!(NOT_IMPL, AddressingMode::Implied, None, 1, 0, false),
+    op!(TAS, AddressingMode::Implied, None, 3, 5, false),
     op!(NOT_IMPL, AddressingMode::Implied, None, 1, 0, false),
     op!(
         STA,

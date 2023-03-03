@@ -2,7 +2,7 @@ use crate::cpu::Trap;
 
 /// A simple representation of memory.
 pub struct Memory<'a> {
-    cells: &'a mut [u8],
+    pub cells: &'a mut [u8],
     size: usize,
 }
 
