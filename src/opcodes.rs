@@ -146,11 +146,11 @@ impl OpCode {
 
     fn BRK(cpu: &mut CPU) -> Result<(), Trap> {
         cpu.prev_pc = cpu.pc;
-        let lo = cpu.bus.read(0xfffe).unwrap();
-        let hi = cpu.bus.read(0xffff).unwrap();
-        cpu.pc = ((hi as u16) << 8) | (lo as u16);
-        //Err(Trap::Break(cpu.pc as usize))
-        Ok(())
+        // let lo = cpu.bus.read(0xfffe).unwrap();
+        // let hi = cpu.bus.read(0xffff).unwrap();
+        // cpu.pc = ((hi as u16) << 8) | (lo as u16);
+        Err(Trap::Break(cpu.pc as usize))
+        //        Ok(())
     }
 
     pub fn CLC(cpu: &mut CPU) -> Result<(), Trap> {
