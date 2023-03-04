@@ -20,9 +20,13 @@ macro_rules! branch {
         pub fn $name(cpu: &mut CPU) -> Result<(), Trap> {
             if StatusFlags::is_set(cpu.sr, $bit) == $flag {
                 let target = cpu.operands.op1 + cpu.opcode.size as u16 - 2;
-                if target == cpu.pc.wrapping_sub(2) {
-                    return Err(Trap::Break(cpu.pc as usize));
-                }
+                // Detect infinite loops
+                // if target == cpu.pc.wrapping_sub(2) {
+                //     return Err(Trap::Break(cpu.pc as usize));
+                // }
+
+                // If taken branch crosses page boundary, we add 2 cycles, else 1
+                cpu.clock += if (cpu.pc >> 8) != (target >> 8) { 2 } else { 1 };
                 cpu.pc = target;
             }
             Ok(())
