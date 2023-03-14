@@ -55,6 +55,7 @@ impl OpCode {
     pub fn push_stack(cpu: &mut CPU, val: u8) -> Result<(), Trap> {
         let sp = cpu.reg(Register::SP);
         cpu.bus
+            .borrow_mut()
             .write(STACK_BASE.wrapping_add(sp as u16) as usize, val)?;
         cpu.set_reg(Register::SP, sp.wrapping_sub(1));
         Ok(())
@@ -64,6 +65,7 @@ impl OpCode {
         let sp = cpu.reg(Register::SP);
         cpu.set_reg(Register::SP, sp.wrapping_add(1));
         cpu.bus
+            .borrow_mut()
             .read(STACK_BASE.wrapping_add(sp as u16).wrapping_add(1) as usize)
     }
 
@@ -71,13 +73,13 @@ impl OpCode {
         let c: i16 = StatusFlags::is_set(cpu.sr, StatusFlags::C).into();
         let ra = cpu.reg(Register::A);
         let t: i16 = (ra as i16)
-            .wrapping_add(cpu.operands.op1 as i16)
+            .wrapping_add(cpu.operands.op2 as i16)
             .wrapping_add(c);
         let ovflw1 = (ra >> 7) != (cpu.operands.op2 >> 7) && (ra >> 7) != ((t as u8) >> 7);
         cpu.set_reg(Register::A, t as u8);
 
         set_or_clear_status_bit!(cpu, ovflw1, V);
-        set_or_clear_status_bit!(cpu, t >= 0, C);
+        set_or_clear_status_bit!(cpu, t >= 256, C);
         set_or_clear_nz!(cpu, t as u8);
         Ok(())
     }
@@ -116,7 +118,9 @@ impl OpCode {
             }
             _ => {
                 let nval = OpCode::impl_ASL(cpu, cpu.operands.op2);
-                cpu.bus.write(cpu.operands.op1 as usize, nval)?;
+                cpu.bus
+                    .borrow_mut()
+                    .write(cpu.operands.op1 as usize, nval)?;
             }
         }
         Ok(())
@@ -124,7 +128,9 @@ impl OpCode {
 
     pub fn ASO(cpu: &mut CPU) -> Result<(), Trap> {
         let nval = OpCode::impl_ASL(cpu, cpu.operands.op2);
-        cpu.bus.write(cpu.operands.op1 as usize, nval)?;
+        cpu.bus
+            .borrow_mut()
+            .write(cpu.operands.op1 as usize, nval)?;
         let nval2 = cpu.reg(Register::A) | nval;
         cpu.set_reg(Register::A, nval2);
         set_or_clear_nz!(cpu, nval2);
@@ -150,8 +156,8 @@ impl OpCode {
 
     fn BRK(cpu: &mut CPU) -> Result<(), Trap> {
         cpu.prev_pc = cpu.pc;
-        // let lo = cpu.bus.read(0xfffe).unwrap();
-        // let hi = cpu.bus.read(0xffff).unwrap();
+        // let lo = cpu.bus.borrow_mut().read(0xfffe).unwrap();
+        // let hi = cpu.bus.borrow_mut().read(0xffff).unwrap();
         // cpu.pc = ((hi as u16) << 8) | (lo as u16);
         Err(Trap::Break(cpu.pc as usize))
         //        Ok(())
@@ -185,13 +191,13 @@ impl OpCode {
         let c: i16 = StatusFlags::is_set(cpu.sr, StatusFlags::C).into();
         let ra = cpu.reg(Register::A);
         let t: i16 = (ra as i16)
-            .wrapping_sub(cpu.operands.op1 as i16)
+            .wrapping_sub(cpu.operands.op2 as i16)
             .wrapping_sub(1 - c);
         let ovflw1 = (ra >> 7) != (cpu.operands.op2 >> 7) && (ra >> 7) != ((t as u8) >> 7);
         cpu.set_reg(Register::A, t as u8);
 
         set_or_clear_status_bit!(cpu, ovflw1, V);
-        set_or_clear_status_bit!(cpu, t >= 0, C);
+        set_or_clear_status_bit!(cpu, (t & 256) == 0, C);
         set_or_clear_nz!(cpu, t as u8);
         Ok(())
     }
@@ -211,13 +217,13 @@ impl OpCode {
 
     pub fn ISB(cpu: &mut CPU) -> Result<(), Trap> {
         let v = cpu.operands.op2.wrapping_add(1);
-        cpu.bus.write(cpu.operands.op1 as usize, v)?;
+        cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, v)?;
         OpCode::SBC(cpu)?;
         Ok(())
     }
     pub fn DCP(cpu: &mut CPU) -> Result<(), Trap> {
         let v = cpu.operands.op2.wrapping_sub(1);
-        cpu.bus.write(cpu.operands.op1 as usize, v)?;
+        cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, v)?;
 
         OpCode::impl_CMP(cpu, Register::A);
         Ok(())
@@ -232,7 +238,7 @@ impl OpCode {
             }
             _ => {
                 let v = cpu.operands.op2.wrapping_add(1);
-                cpu.bus.write(cpu.operands.op1 as usize, v)?;
+                cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, v)?;
                 v
             }
         };
@@ -261,7 +267,7 @@ impl OpCode {
             }
             _ => {
                 let v = cpu.operands.op2.wrapping_sub(1);
-                cpu.bus.write(cpu.operands.op1 as usize, v)?;
+                cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, v)?;
                 v
             }
         };
@@ -333,7 +339,9 @@ impl OpCode {
             }
             _ => {
                 let v: u8 = cpu.operands.op2;
-                cpu.bus.write(cpu.operands.op1 as usize, v.shr(1))?;
+                cpu.bus
+                    .borrow_mut()
+                    .write(cpu.operands.op1 as usize, v.shr(1))?;
                 v
             }
         };
@@ -343,7 +351,7 @@ impl OpCode {
 
     pub fn SRE(cpu: &mut CPU) -> Result<(), Trap> {
         let v: u8 = cpu.operands.op2.shr(1);
-        cpu.bus.write(cpu.operands.op1 as usize, v)?;
+        cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, v)?;
         let a = cpu.reg(Register::A);
         let nav = a ^ v;
         cpu.set_reg(Register::A, nav);
@@ -376,7 +384,7 @@ impl OpCode {
 
     pub fn RLA(cpu: &mut CPU) -> Result<(), Trap> {
         let ar = OpCode::impl_ROL(cpu, cpu.operands.op2);
-        cpu.bus.write(cpu.operands.op2 as usize, ar)?;
+        cpu.bus.borrow_mut().write(cpu.operands.op2 as usize, ar)?;
         let a = cpu.reg(Register::A);
         set_or_clear_nz!(cpu, a);
         Ok(())
@@ -389,7 +397,7 @@ impl OpCode {
             }
             _ => {
                 let ar = OpCode::impl_ROL(cpu, cpu.operands.op2);
-                cpu.bus.write(cpu.operands.op1 as usize, ar)?;
+                cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, ar)?;
             }
         }
         Ok(())
@@ -402,7 +410,7 @@ impl OpCode {
             }
             _ => {
                 let ar = OpCode::impl_ROR(cpu, cpu.operands.op2);
-                cpu.bus.write(cpu.operands.op1 as usize, ar)?;
+                cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, ar)?;
             }
         }
         Ok(())
@@ -437,14 +445,18 @@ impl OpCode {
         Ok(())
     }
     pub fn RTS(cpu: &mut CPU) -> Result<(), Trap> {
-        cpu.pc = (OpCode::pop_stack(cpu)? as u16) | ((OpCode::pop_stack(cpu)? as u16) << 8);
+        //println!("CPU: RTS: Popped");
+        let p1 = OpCode::pop_stack(cpu)? as u16;
+        let p2 = OpCode::pop_stack(cpu)? as u16;
+        cpu.pc = p1 | (p2 << 8);
+        println!("CPU: RTS: Popped {:#x?}/{:#x?} -> {:#x?}", p1, p2, cpu.pc);
         Ok(())
     }
     pub fn SAX(cpu: &mut CPU) -> Result<(), Trap> {
         let a = cpu.reg(Register::A);
         let x = cpu.reg(Register::X);
         let v = a & x;
-        cpu.bus.write(cpu.operands.op1 as usize, v)?;
+        cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, v)?;
         Ok(())
     }
 
@@ -467,15 +479,18 @@ impl OpCode {
 
     pub fn STA(cpu: &mut CPU) -> Result<(), Trap> {
         cpu.bus
+            .borrow_mut()
             .write(cpu.operands.op1 as usize, cpu.reg(Register::A))
     }
     pub fn STX(cpu: &mut CPU) -> Result<(), Trap> {
         cpu.bus
+            .borrow_mut()
             .write(cpu.operands.op1 as usize, cpu.reg(Register::X))?;
         Ok(())
     }
     pub fn STY(cpu: &mut CPU) -> Result<(), Trap> {
         cpu.bus
+            .borrow_mut()
             .write(cpu.operands.op1 as usize, cpu.reg(Register::Y))?;
         Ok(())
     }
@@ -489,7 +504,7 @@ impl OpCode {
         cpu.set_reg(Register::SP, v);
         // ..then ANDs that result with the contents of the high byte of  the target address
         let v = v & cpu.operands.op2;
-        cpu.bus.write(cpu.operands.op1 as usize, v)?;
+        cpu.bus.borrow_mut().write(cpu.operands.op1 as usize, v)?;
         Ok(())
     }
 

@@ -1,13 +1,16 @@
+use std::rc::Rc;
+
 use crate::cpu::Trap;
 
 /// A simple representation of memory.
-pub struct Memory<'a> {
-    pub cells: &'a mut [u8],
-    size: usize,
+pub struct Memory {
+    // We leave this pub so that we can have checked direct access
+    pub cells: Box<[u8]>,
+    pub size: usize,
 }
 
-impl Memory<'_> {
-    pub fn new<'a>(cells: &'a mut [u8]) -> Memory<'a> {
+impl Memory {
+    pub fn new(cells: Box<[u8]>) -> Memory {
         let size = cells.len();
         Memory { cells, size }
     }
@@ -20,7 +23,7 @@ pub trait MemoryOperations {
     fn write16(&mut self, addr: usize, value: u16) -> Result<(), Trap>;
 }
 
-impl MemoryOperations for Memory<'_> {
+impl MemoryOperations for Memory {
     fn read8(&self, addr: usize) -> Result<u8, Trap> {
         if addr > self.size {
             Err(Trap::AddressError(addr))

@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use r6502::{
     cpu::{Bus, BusOperations, Register, CPU},
     memory::{Memory, MemoryOperations},
@@ -8,14 +10,21 @@ const FUNCTIONAL_TEST: &[u8; RAM_SIZE] = include_bytes!("../tests/6502_functiona
 
 #[test]
 pub fn functional() {
-    let cells: &mut [u8] = &mut vec![0; RAM_SIZE];
-    let mut ram = Memory::new(cells);
-    let mut bus = Bus::create(&mut ram);
-    let mut cpu = CPU::new(&mut bus);
+    const RAM_SIZE: usize = 1024 * 64;
+
+    let bus: Box<dyn BusOperations> = Box::new(Bus::create());
+    let busrc: Rc<RefCell<Box<dyn BusOperations>>> = Rc::new(RefCell::new(bus));
+    //Rc<RefCell<Box<&'a mut dyn BusOperations>>>
+    let mut cpu = CPU::new(busrc);
+
+    // let cells: &mut [u8] = &mut vec![0; RAM_SIZE];
+    // let mut ram = Memory::new(cells);
+    // let mut bus = Bus::create(&mut ram);
+    // let mut cpu = CPU::new(&mut bus);
 
     for i in 0..FUNCTIONAL_TEST.len() {
         //println!("{:#x?}: {:#x?}", i, FUNCTIONAL_TEST[i]);
-        match cpu.write8(i, FUNCTIONAL_TEST[i]) {
+        match cpu.bus.borrow_mut().write(i, FUNCTIONAL_TEST[i]) {
             Ok(_) => {}
             Err(err) => panic!("{:?}", err),
         }

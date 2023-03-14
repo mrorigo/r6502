@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     memory::{Memory, MemoryOperations},
     opcodes::{OpCode, OPCODE_MAP},
@@ -57,7 +59,7 @@ pub enum Trap {
 }
 
 pub struct CPU<'a> {
-    pub bus: &'a mut dyn BusOperations,
+    pub bus: Rc<RefCell<Box<dyn BusOperations>>>,
     registers: [u8; Register::MAX as usize],
     pub pc: u16,
     pub prev_pc: u16,
@@ -70,14 +72,9 @@ pub struct CPU<'a> {
 }
 
 /// A minimal bus consisting of only RAM
-pub struct Bus<'a> {
-    pub ram: &'a mut dyn MemoryOperations,
-}
-
-impl Bus<'_> {
-    pub fn create<'a>(ram: &'a mut Memory<'a>) -> Bus<'a> {
-        Bus { ram }
-    }
+pub struct Bus {
+    //pub ram: &'a mut Memory,
+    pub ram: Box<Memory>,
 }
 
 /// In the view of the CPU, the Bus is basically a memory mapper for all the different peripherals connected to the CPU
@@ -88,9 +85,18 @@ pub trait BusOperations {
     fn tick(&mut self) -> bool {
         false
     }
+    fn reset(&mut self) {}
 }
 
-impl BusOperations for Bus<'_> {
+impl Bus {
+    pub fn create<'a>() -> impl BusOperations + 'a {
+        const RAM_SIZE: usize = 1024 * 64; // 16-bit adressable
+        let ram = Memory::new(Box::new([0u8; RAM_SIZE]));
+        Bus { ram: Box::new(ram) }
+    }
+}
+
+impl BusOperations for Bus {
     fn read(&mut self, addr: usize) -> Result<u8, Trap> {
         self.ram.read8(addr)
     }
@@ -102,20 +108,25 @@ impl BusOperations for Bus<'_> {
 
 impl CPU<'_> {
     pub fn read16(&mut self, addr: usize) -> Result<u16, Trap> {
-        let hh = self.bus.read(addr + 1)?;
-        let ll = self.bus.read(addr)?;
+        // let mut b1 = self.bus.as_ref().borrow_mut();
+        // b1.read(addr)?;
+
+        let hh = self.bus.borrow_mut().read(addr + 1)?;
+        let ll = self.bus.borrow_mut().read(addr)?;
         Ok(((hh as u16) << 8) | (ll as u16))
     }
 
     pub fn write16(&mut self, addr: usize, value: u16) -> Result<(), Trap> {
-        self.bus.write(addr, (value & 0xff) as u8)?;
-        self.bus.write(addr + 1, ((value >> 8) & 0xff) as u8)?;
+        self.bus.borrow_mut().write(addr, (value & 0xff) as u8)?;
+        self.bus
+            .borrow_mut()
+            .write(addr + 1, ((value >> 8) & 0xff) as u8)?;
         Ok(())
     }
 }
 
 impl CPU<'_> {
-    pub fn new<'a>(bus: &'a mut dyn BusOperations) -> CPU<'a> {
+    pub fn new<'a>(bus: Rc<RefCell<Box<dyn BusOperations>>>) -> CPU<'a> {
         CPU {
             bus,
             registers: [0; Register::MAX as usize],
@@ -155,8 +166,8 @@ impl CPU<'_> {
         OpCode::push_stack(self, (self.pc >> 8) as u8)?;
         OpCode::push_stack(self, (self.pc & 0xff) as u8)?;
         OpCode::push_stack(self, status)?;
-
-        self.pc = (self.bus.read(0xfffe)? as u16) | ((self.bus.read(0xffff)? as u16) << 8);
+        let mut bus = self.bus.borrow_mut();
+        self.pc = (bus.read(0xfffe)? as u16) | ((bus.read(0xffff)? as u16) << 8);
 
         self.clock = self.clock.wrapping_add(7);
         Ok(())
@@ -181,12 +192,12 @@ impl CPU<'_> {
         self.ticks = self.ticks.wrapping_add(1);
         if self.ticks > self.clock {
             self.prev_pc = self.pc;
-            if self.bus.tick() {
+            if self.bus.borrow_mut().tick() {
                 //                println!("IGNORED IRQ!. 314={:#x?}", self.read16(0x314));
                 return self.irq().map(|_| 0);
             }
 
-            let data = self.bus.read(self.pc as usize)?;
+            let data = self.bus.borrow_mut().read(self.pc as usize)?;
             self.opcode = &OPCODE_MAP[data as usize];
 
             self.operands = self.opcode.addressing_mode.decode(self)?;
@@ -199,6 +210,8 @@ impl CPU<'_> {
 
             (self.opcode.op_impl)(self)?;
 
+            // Clock might also have been updaetd by instruction (branches)
+            // However, we add the possible decoding extra cycle here
             self.clock = self.clock.wrapping_add(
                 self.opcode
                     .cycles
@@ -260,58 +273,79 @@ impl AddressingMode {
             AddressingMode::Accumulator | AddressingMode::Implied => (0, 0, 0 as u16, false),
             AddressingMode::Absolute => {
                 let addr = cpu.read16(pc1)?;
-                (addr, cpu.bus.read(addr as usize)?, addr, false)
+                (addr, cpu.bus.borrow_mut().read(addr as usize)?, addr, false)
             }
             AddressingMode::AbsoluteX => {
                 let addr = cpu.read16(pc1)?;
                 let extra_cycle = AddressingMode::check_extra(addr, cpu.reg(Register::X) as u16);
                 let addr2 = addr.wrapping_add(cpu.reg(Register::X) as u16);
-                (addr2, cpu.bus.read(addr2 as usize)?, addr, extra_cycle)
+                (
+                    addr2,
+                    cpu.bus.borrow_mut().read(addr2 as usize)?,
+                    addr,
+                    extra_cycle,
+                )
             }
             AddressingMode::AbsoluteY => {
                 let addr = cpu.read16(pc1)?;
                 let extra_cycle = AddressingMode::check_extra(addr, cpu.reg(Register::Y) as u16);
                 let addr2 = addr.wrapping_add(cpu.reg(Register::Y) as u16);
-                (addr2, cpu.bus.read(addr2 as usize)?, addr, extra_cycle)
+                (
+                    addr2,
+                    cpu.bus.borrow_mut().read(addr2 as usize)?,
+                    addr,
+                    extra_cycle,
+                )
             }
             AddressingMode::Immediate => {
-                let value = cpu.bus.read(pc1)?;
+                let value = cpu.bus.borrow_mut().read(pc1)?;
                 (0, value, value as u16, false)
             }
             AddressingMode::Indirect => {
                 let addr = cpu.read16(pc1)?;
-                let lo = cpu.bus.read(addr as usize)? as u16;
+                let lo = cpu.bus.borrow_mut().read(addr as usize)? as u16;
                 let addr2 = match (addr & 0xff) == 0xff {
                     true => addr & 0xff00,
                     false => addr.wrapping_add(1),
                 };
-                let hi = cpu.bus.read(addr2 as usize)? as u16;
+                let hi = cpu.bus.borrow_mut().read(addr2 as usize)? as u16;
                 ((hi << 8) | (lo), 0, addr, false)
             }
             AddressingMode::IndirectX => {
-                let tmp = cpu.bus.read(pc1)?;
+                let tmp = cpu.bus.borrow_mut().read(pc1)?;
                 let addr = tmp.wrapping_add(cpu.reg(Register::X));
-                let addr2_lo = cpu.bus.read((addr & 0xff) as usize)? as u16;
-                let addr2_hi = cpu.bus.read((addr.wrapping_add(1) & 0xff) as usize)? as u16;
+                let addr2_lo = cpu.bus.borrow_mut().read((addr & 0xff) as usize)? as u16;
+                let addr2_hi =
+                    cpu.bus
+                        .borrow_mut()
+                        .read((addr.wrapping_add(1) & 0xff) as usize)? as u16;
                 let addr2 = addr2_lo | (addr2_hi << 8);
-                (addr2, cpu.bus.read(addr2 as usize)?, tmp as u16, false)
+                (
+                    addr2,
+                    cpu.bus.borrow_mut().read(addr2 as usize)?,
+                    tmp as u16,
+                    false,
+                )
             }
             AddressingMode::IndirectY => {
-                let tmp = cpu.bus.read(pc1)?; // 0xd1
-                let addr_lo = cpu.bus.read(tmp as usize)? as u16;
-                let addr_hi = cpu.bus.read((tmp.wrapping_add(1) & 0xff) as usize)? as u16;
+                let tmp = cpu.bus.borrow_mut().read(pc1)?; // 0xd1
+                let addr_lo = cpu.bus.borrow_mut().read(tmp as usize)? as u16;
+                let addr_hi =
+                    cpu.bus
+                        .borrow_mut()
+                        .read((tmp.wrapping_add(1) & 0xff) as usize)? as u16;
                 let addr = (addr_hi << 8) | addr_lo;
                 let extra_cycle = AddressingMode::check_extra(addr, cpu.reg(Register::Y) as u16);
                 let addr2 = addr.wrapping_add(cpu.reg(Register::Y) as u16) as u16;
                 (
                     addr2,
-                    cpu.bus.read(addr2 as usize)?,
+                    cpu.bus.borrow_mut().read(addr2 as usize)?,
                     tmp as u16,
                     extra_cycle,
                 )
             }
             AddressingMode::Relative => {
-                let offs = cpu.bus.read(pc1)? as i8 as i16;
+                let offs = cpu.bus.borrow_mut().read(pc1)? as i8 as i16;
                 (
                     (cpu.pc as i16).wrapping_add(offs) as u16,
                     0,
@@ -320,25 +354,30 @@ impl AddressingMode {
                 )
             }
             AddressingMode::ZeroPage => {
-                let addr = cpu.bus.read(pc1)? as u16;
-                (addr, cpu.bus.read(addr as usize)? as u8, addr, false)
+                let addr = cpu.bus.borrow_mut().read(pc1)? as u16;
+                (
+                    addr,
+                    cpu.bus.borrow_mut().read(addr as usize)? as u8,
+                    addr,
+                    false,
+                )
             }
             AddressingMode::ZeroPageX => {
-                let addr = cpu.bus.read(pc1)?;
+                let addr = cpu.bus.borrow_mut().read(pc1)?;
                 let addr2 = addr.wrapping_add(cpu.reg(Register::X));
                 (
                     addr2 as u16,
-                    cpu.bus.read(addr2 as usize)? as u8,
+                    cpu.bus.borrow_mut().read(addr2 as usize)? as u8,
                     addr as u16,
                     false,
                 )
             }
             AddressingMode::ZeroPageY => {
-                let addr = cpu.bus.read(pc1)?;
+                let addr = cpu.bus.borrow_mut().read(pc1)?;
                 let addr2 = addr.wrapping_add(cpu.reg(Register::Y));
                 (
                     addr2 as u16,
-                    cpu.bus.read(addr2 as usize)? as u8,
+                    cpu.bus.borrow_mut().read(addr2 as usize)? as u8,
                     addr as u16,
                     false,
                 )
